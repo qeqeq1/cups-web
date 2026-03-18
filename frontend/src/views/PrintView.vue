@@ -1,391 +1,358 @@
 <template>
   <div class="p-6">
-    <div class="card bg-base-100 shadow">
-      <div class="card-body">
-        <h2 class="card-title">Print</h2>
+    <UCard>
+      <template #header>
+        <h2 class="text-xl font-bold flex items-center gap-2">
+          <UIcon name="i-lucide-printer" class="w-5 h-5" />
+          打印
+        </h2>
+      </template>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
-          <div class="alert bg-base-200">
-            <div class="text-sm" v-if="estimating">估算中…</div>
-            <div class="space-y-1 text-sm" v-else-if="estimate">
-              <div>预估页数：{{ estimate.pages }} <span v-if="estimate.estimated">(估算)</span></div>
-            </div>
-            <div class="text-sm" v-else>选择文件后显示估算</div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="col-span-1 space-y-4">
+          <UFormField label="打印机">
+            <USelect
+              v-model="printer"
+              :items="printerItems"
+              value-key="value"
+              label-key="label"
+              class="w-full"
+            />
+          </UFormField>
+
+          <UFormField label="文件">
+            <input type="file" ref="file" @change="onFileChange" class="file-input file-input-bordered w-full" />
+          </UFormField>
+
+          <UFormField label="打印选项">
+            <USelect
+              v-model="isDuplex"
+              :items="duplexItems"
+              value-key="value"
+              label-key="label"
+              class="w-full"
+            />
+          </UFormField>
+
+          <UFormField label="颜色模式">
+            <USelect
+              v-model="isColor"
+              :items="colorItems"
+              value-key="value"
+              label-key="label"
+              class="w-full"
+            />
+          </UFormField>
+
+          <div class="flex gap-2">
+            <UButton color="primary" :disabled="!canPrint || converting" @click="uploadAndPrint" icon="i-lucide-printer">打印</UButton>
+            <UButton :disabled="!canConvert" @click="convertToPdf" icon="i-lucide-file-text">转换</UButton>
+            <UButton v-if="previewUrl" variant="ghost" :href="previewUrl" :download="downloadName" icon="i-lucide-download">下载预览</UButton>
+          </div>
+
+          <div class="text-sm text-muted">{{ msg }}</div>
+
+          <div class="mt-4">
+            <UAlert v-if="converting" color="info" variant="subtle" title="转换中…" />
+            <UAlert v-if="converted" color="success" variant="subtle" title="已转换为 PDF" />
           </div>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div class="col-span-1 space-y-4">
-            <label class="label">
-              <span class="label-text">打印机</span>
-            </label>
-            <select v-model="printer" class="select select-bordered w-full">
-              <option v-for="p in printers" :key="p.uri" :value="p.uri">{{ p.name }} — {{ p.uri }}</option>
-            </select>
-
-            <div>
-              <label class="label">
-                <span class="label-text">文件</span>
-              </label>
-              <input type="file" ref="file" @change="onFileChange" class="file-input file-input-bordered w-full" />
+        <div class="col-span-2">
+          <label class="label"><span class="label-text">预览</span></label>
+          <div class="preview-container p-2 border rounded">
+            <div v-if="previewType === 'image'" class="flex items-center justify-center">
+              <img :src="previewUrl" alt="preview" class="max-h-[600px] max-w-full" />
             </div>
-
-            <div>
-              <label class="label">
-                <span class="label-text">打印选项</span>
-              </label>
-              <select v-model="isDuplex" class="select select-bordered w-full">
-                <option :value="false">单面打印</option>
-                <option :value="true">双面打印（长边翻转）</option>
-              </select>
+            <div v-else-if="previewType === 'pdf'">
+              <iframe :src="previewUrl" style="width:100%; height:600px;" frameborder="0"></iframe>
             </div>
-
-            <div>
-              <label class="label">
-                <span class="label-text">颜色模式</span>
-              </label>
-              <select v-model="isColor" class="select select-bordered w-full" @change="estimatePrice">
-                <option :value="true">彩色打印</option>
-                <option :value="false">黑白打印</option>
-              </select>
+            <div v-else-if="previewType === 'text'" class="p-4 whitespace-pre-wrap overflow-auto h-64">
+              {{ textPreview }}
             </div>
-
-            <div class="space-x-2">
-              <button class="btn btn-primary" :disabled="!canPrint || converting" @click="uploadAndPrint">打印</button>
-              <button class="btn" :disabled="!canConvert" @click="convertToPdf">转换</button>
-              <a v-if="previewUrl" :href="previewUrl" :download="downloadName" class="btn btn-ghost">下载预览</a>
-            </div>
-
-            <div class="text-sm text-muted">{{ msg }}</div>
-
-            <div class="mt-4">
-              <label class="label"><span class="label-text">转换状态</span></label>
-              <div v-if="converting" class="alert alert-info">转换中…</div>
-              <div v-if="converted" class="alert alert-success">已转换为 PDF</div>
-            </div>
-          </div>
-
-          <div class="col-span-2">
-            <label class="label"><span class="label-text">Preview</span></label>
-            <div class="preview-container p-2">
-              <div v-if="previewType === 'image'" class="flex items-center justify-center">
-                <img :src="previewUrl" alt="preview" class="max-h-[600px] max-w-full" />
-              </div>
-              <div v-else-if="previewType === 'pdf'">
-                <iframe :src="previewUrl" style="width:100%; height:600px;" frameborder="0"></iframe>
-              </div>
-              <div v-else-if="previewType === 'text'" class="p-4 whitespace-pre-wrap overflow-auto h-64">
-                {{ textPreview }}
-              </div>
-              <div v-else class="p-4 text-muted">无预览可用</div>
-            </div>
+            <div v-else class="p-4 text-muted">无预览可用</div>
           </div>
         </div>
-
       </div>
-    </div>
+    </UCard>
   </div>
 </template>
 
-<script>
+<script setup>
+import { ref, computed, onMounted } from 'vue'
 import { jsPDF } from 'jspdf'
 
-export default {
-  data() {
-    return {
-      printer: '',
-      printers: [],
-      msg: '',
-      selectedFile: null,
-      previewUrl: '',
-      previewType: '',
-      textPreview: '',
-      converting: false,
-      converted: false,
-      pdfBlob: null,
-      downloadName: '',
-      estimate: null,
-      estimating: false,
-      isDuplex: false,
-      isColor: true
-    }
-  },
-  computed: {
-    canPrint() {
-      const hasFile = !!this.printer && (!!this.pdfBlob || !!this.selectedFile)
-      if (!hasFile) return false
-      if (this.estimating) return false
-      return true
-    },
-    canConvert() {
-      return !!this.selectedFile && !this.converting && this.selectedFile.type !== 'application/pdf'
-    }
-  },
-  async mounted() {
-    await this.loadProfile()
+const printer = ref('')
+const printers = ref([])
+const msg = ref('')
+const selectedFile = ref(null)
+const previewUrl = ref('')
+const previewType = ref('')
+const textPreview = ref('')
+const converting = ref(false)
+const converted = ref(false)
+const pdfBlob = ref(null)
+const downloadName = ref('')
+const isDuplex = ref(false)
+const isColor = ref(true)
+
+const emit = defineEmits(['logout'])
+
+const printerItems = computed(() =>
+  printers.value.map(p => ({ label: `${p.name} — ${p.uri}`, value: p.uri }))
+)
+
+const duplexItems = [
+  { label: '单面打印', value: false },
+  { label: '双面打印（长边翻转）', value: true }
+]
+
+const colorItems = [
+  { label: '彩色打印', value: true },
+  { label: '黑白打印', value: false }
+]
+
+const canPrint = computed(() => {
+  return !!printer.value && (!!pdfBlob.value || !!selectedFile.value)
+})
+
+const canConvert = computed(() => {
+  return !!selectedFile.value && !converting.value && selectedFile.value.type !== 'application/pdf'
+})
+
+function getCSRF() {
+  const m = document.cookie.match('(^|;)\\s*csrf_token\\s*=\\s*([^;]+)')
+  return m ? m.pop() : ''
+}
+
+async function readError(resp) {
+  try {
+    const data = await resp.json()
+    return data.error || resp.statusText
+  } catch (e) {
     try {
-      const resp = await fetch('/api/printers', { credentials: 'include' })
-      if (resp.ok) {
-        this.printers = await resp.json()
-        const last = localStorage.getItem('last_printer')
-        if (last) this.printer = last
-        else if (this.printers.length > 0) this.printer = this.printers[0].uri
-      } else if (resp.status === 401) {
-        this.$emit('logout')
-      } else {
-        this.msg = '加载打印机失败'
-      }
-    } catch (e) {
-      this.msg = '加载打印机失败：' + e.message
-    }
-  },
-  methods: {
-    async loadProfile() {
-      // 简化：不再加载费用相关信息
-    },
-    getCSRF() {
-      const m = document.cookie.match('(^|;)\\s*csrf_token\\s*=\\s*([^;]+)')
-      return m ? m.pop() : ''
-    },
-    formatCents(value) {
-      const cents = Number.isFinite(value) ? value : 0
-      return (cents / 100).toFixed(2)
-    },
-    async readError(resp) {
-      try {
-        const data = await resp.json()
-        return data.error || resp.statusText
-      } catch (e) {
-        try {
-          const text = await resp.text()
-          return text || resp.statusText
-        } catch (err) {
-          return resp.statusText
-        }
-      }
-    },
-    clearPreview() {
-      if (this.previewUrl) {
-        try {
-          URL.revokeObjectURL(this.previewUrl)
-        } catch (e) {
-          // ignore
-        }
-      }
-      this.previewUrl = ''
-      this.previewType = ''
-      this.textPreview = ''
-      this.pdfBlob = null
-      this.converted = false
-      this.selectedFile = null
-      this.downloadName = ''
-      this.estimate = null
-      this.estimating = false
-    },
-    onFileChange(e) {
-      const f = e.target.files[0]
-      this.clearPreview()
-      if (!f) return
-      this.selectedFile = f
-      this.downloadName = f.name.replace(/\.[^/.]+$/, '') + '.pdf'
-
-      if (f.type === 'application/pdf') {
-        this.previewUrl = URL.createObjectURL(f)
-        this.previewType = 'pdf'
-        this.pdfBlob = f
-        this.converted = true
-      } else if (f.type.startsWith('image/')) {
-        this.previewUrl = URL.createObjectURL(f)
-        this.previewType = 'image'
-        this.pdfBlob = null
-        this.converted = false
-      } else if (this.isOfficeFile(f)) {
-        this.previewType = 'text'
-        this.textPreview = 'Office 文档（无法预览）。点击"转换"生成 PDF。'
-        this.pdfBlob = null
-        this.converted = false
-      } else if (f.type.startsWith('text/') || /\.(txt|md|html)$/i.test(f.name)) {
-        const reader = new FileReader()
-        reader.onload = () => {
-          this.textPreview = reader.result
-          this.previewType = 'text'
-        }
-        reader.readAsText(f)
-        this.pdfBlob = null
-        this.converted = false
-      } else {
-        const reader = new FileReader()
-        reader.onload = () => {
-          const text = typeof reader.result === 'string' ? reader.result : ''
-          this.textPreview = text.slice(0, 10000) || 'No preview available'
-          this.previewType = 'text'
-        }
-        reader.readAsText(f)
-        this.pdfBlob = null
-        this.converted = false
-      }
-      this.estimatePrice()
-    },
-    async estimatePrice() {
-      const fileForEstimate = this.pdfBlob || this.selectedFile
-      if (!fileForEstimate) return
-      this.estimating = true
-      const form = new FormData()
-      const name = this.downloadName || fileForEstimate.name || 'document.pdf'
-      form.append('file', fileForEstimate, name)
-      form.append('color', this.isColor ? 'true' : 'false')
-      try {
-        const resp = await fetch('/api/estimate', {
-          method: 'POST',
-          body: form,
-          credentials: 'include',
-          headers: { 'X-CSRF-Token': this.getCSRF() }
-        })
-        if (!resp.ok) {
-          this.msg = await this.readError(resp)
-          if (resp.status === 401) this.$emit('logout')
-          return
-        }
-        const data = await resp.json()
-        this.estimate = data
-      } catch (e) {
-        this.msg = '估算失败：' + e.message
-      } finally {
-        this.estimating = false
-      }
-    },
-    async convertToPdf() {
-      if (!this.selectedFile) { this.msg = 'No file selected'; return }
-      this.converting = true
-      this.msg = ''
-      try {
-        const f = this.selectedFile
-        let blob = null
-
-        if (this.isOfficeFile(f)) {
-          blob = await this.convertOfficeToPdf(f)
-        } else if (f.type.startsWith('image/')) {
-          blob = await this.imageFileToPdfBlob(f)
-        } else if (f.type.startsWith('text/') || /\.(txt|md|html)$/i.test(f.name)) {
-          const text = await f.text()
-          blob = this.textToPdfBlob(text)
-        } else {
-          try {
-            const text = await f.text()
-            blob = this.textToPdfBlob(text)
-          } catch (e) {
-            throw new Error('Unsupported file type for conversion')
-          }
-        }
-
-        this.pdfBlob = blob
-        this.previewUrl = URL.createObjectURL(blob)
-        this.previewType = 'pdf'
-        this.converted = true
-        this.msg = '已准备好转换'
-        this.estimatePrice()
-      } catch (e) {
-        this.msg = '转换失败：' + e.message
-      } finally {
-        this.converting = false
-      }
-    },
-    isOfficeFile(f) {
-      return /\.(docx?|pptx?|xlsx?)$/i.test(f.name) || [
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-        'application/vnd.ms-powerpoint',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'application/vnd.ms-excel'
-      ].includes(f.type)
-    },
-    async convertOfficeToPdf(file) {
-      const fd = new FormData()
-      fd.append('file', file, file.name)
-      try {
-        const resp = await fetch('/api/convert', {
-          method: 'POST',
-          body: fd,
-          credentials: 'include',
-          headers: { 'X-CSRF-Token': this.getCSRF() }
-        })
-        if (!resp.ok) {
-          const t = await resp.text()
-          throw new Error('server conversion failed: ' + t)
-        }
-        const blob = await resp.blob()
-        return blob
-      } catch (e) {
-        throw e
-      }
-    },
-    imageFileToPdfBlob(file) {
-      return new Promise((resolve, reject) => {
-        const img = new Image()
-        img.onload = () => {
-          const canvas = document.createElement('canvas')
-          canvas.width = img.width
-          canvas.height = img.height
-          const ctx = canvas.getContext('2d')
-          ctx.drawImage(img, 0, 0)
-          const imgData = canvas.toDataURL('image/jpeg', 1.0)
-          const doc = new jsPDF({ unit: 'px', format: [img.width, img.height] })
-          doc.addImage(imgData, 'JPEG', 0, 0, img.width, img.height)
-          const blob = doc.output('blob')
-          resolve(blob)
-        }
-        img.onerror = () => reject(new Error('Failed to load image for conversion'))
-        img.src = URL.createObjectURL(file)
-      })
-    },
-    textToPdfBlob(text) {
-      const doc = new jsPDF()
-      const lines = doc.splitTextToSize(text || '', 180)
-      doc.text(lines, 10, 10)
-      return doc.output('blob')
-    },
-    async uploadAndPrint() {
-      if (!this.printer) { this.msg = '请选择打印机'; return }
-      let fileToSend = null
-      let filename = ''
-      if (this.pdfBlob) {
-        fileToSend = this.pdfBlob
-        filename = this.downloadName || (this.selectedFile && this.selectedFile.name.replace(/\.[^/.]+$/, '') + '.pdf') || 'document.pdf'
-      } else if (this.selectedFile) {
-        fileToSend = this.selectedFile
-        filename = this.selectedFile.name
-      } else {
-        this.msg = '没有可打印的文件'
-        return
-      }
-
-      const form = new FormData()
-      form.append('file', fileToSend, filename)
-      form.append('printer', this.printer)
-      form.append('duplex', this.isDuplex ? 'true' : 'false')
-      form.append('color', this.isColor ? 'true' : 'false')
-
-      try {
-        const resp = await fetch('/api/print', {
-          method: 'POST',
-          body: form,
-          credentials: 'include',
-          headers: { 'X-CSRF-Token': this.getCSRF() }
-        })
-        if (!resp.ok) {
-          this.msg = await this.readError(resp)
-          if (resp.status === 401) this.$emit('logout')
-          return
-        }
-        const j = await resp.json()
-        this.msg = '任务已加入队列：' + (j.jobId || '')
-        this.estimate = null
-        localStorage.setItem('last_printer', this.printer)
-      } catch (e) {
-        this.msg = e.message
-      }
+      const text = await resp.text()
+      return text || resp.statusText
+    } catch (err) {
+      return resp.statusText
     }
   }
 }
+
+function clearPreview() {
+  if (previewUrl.value) {
+    try {
+      URL.revokeObjectURL(previewUrl.value)
+    } catch (e) {
+      // ignore
+    }
+  }
+  previewUrl.value = ''
+  previewType.value = ''
+  textPreview.value = ''
+  pdfBlob.value = null
+  converted.value = false
+  selectedFile.value = null
+  downloadName.value = ''
+}
+
+function isOfficeFile(f) {
+  return /\.(docx?|pptx?|xlsx?)$/i.test(f.name) || [
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    'application/vnd.ms-powerpoint',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    'application/vnd.ms-excel'
+  ].includes(f.type)
+}
+
+async function imageFileToPdfBlob(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => {
+      const canvas = document.createElement('canvas')
+      canvas.width = img.width
+      canvas.height = img.height
+      const ctx = canvas.getContext('2d')
+      ctx.drawImage(img, 0, 0)
+      const imgData = canvas.toDataURL('image/jpeg', 1.0)
+      const doc = new jsPDF({ unit: 'px', format: [img.width, img.height] })
+      doc.addImage(imgData, 'JPEG', 0, 0, img.width, img.height)
+      const blob = doc.output('blob')
+      resolve(blob)
+    }
+    img.onerror = () => reject(new Error('Failed to load image for conversion'))
+    img.src = URL.createObjectURL(file)
+  })
+}
+
+function textToPdfBlob(text) {
+  const doc = new jsPDF()
+  const lines = doc.splitTextToSize(text || '', 180)
+  doc.text(lines, 10, 10)
+  return doc.output('blob')
+}
+
+async function convertOfficeToPdf(file) {
+  const fd = new FormData()
+  fd.append('file', file, file.name)
+  try {
+    const resp = await fetch('/api/convert', {
+      method: 'POST',
+      body: fd,
+      credentials: 'include',
+      headers: { 'X-CSRF-Token': getCSRF() }
+    })
+    if (!resp.ok) {
+      const t = await resp.text()
+      throw new Error('server conversion failed: ' + t)
+    }
+    const blob = await resp.blob()
+    return blob
+  } catch (e) {
+    throw e
+  }
+}
+
+function onFileChange(e) {
+  const f = e.target.files[0]
+  clearPreview()
+  if (!f) return
+  selectedFile.value = f
+  downloadName.value = f.name.replace(/\.[^/.]+$/, '') + '.pdf'
+
+  if (f.type === 'application/pdf') {
+    previewUrl.value = URL.createObjectURL(f)
+    previewType.value = 'pdf'
+    pdfBlob.value = f
+    converted.value = true
+  } else if (f.type.startsWith('image/')) {
+    previewUrl.value = URL.createObjectURL(f)
+    previewType.value = 'image'
+    pdfBlob.value = null
+    converted.value = false
+    estimatePrice()
+  } else if (isOfficeFile(f)) {
+    previewType.value = 'text'
+    textPreview.value = 'Office 文档（无法预览）。点击"转换"生成 PDF。'
+    pdfBlob.value = null
+    converted.value = false
+  } else if (f.type.startsWith('text/') || /\.(txt|md|html)$/i.test(f.name)) {
+    const reader = new FileReader()
+    reader.onload = () => {
+      textPreview.value = reader.result
+      previewType.value = 'text'
+    }
+    reader.readAsText(f)
+    pdfBlob.value = null
+    converted.value = false
+  } else {
+    const reader = new FileReader()
+    reader.onload = () => {
+      const text = typeof reader.result === 'string' ? reader.result : ''
+      textPreview.value = text.slice(0, 10000) || 'No preview available'
+      previewType.value = 'text'
+    }
+    reader.readAsText(f)
+    pdfBlob.value = null
+    converted.value = false
+  }
+  estimatePrice()
+}
+
+async function convertToPdf() {
+  if (!selectedFile.value) { msg.value = 'No file selected'; return }
+  converting.value = true
+  msg.value = ''
+  try {
+    const f = selectedFile.value
+    let blob = null
+
+    if (isOfficeFile(f)) {
+      blob = await convertOfficeToPdf(f)
+    } else if (f.type.startsWith('image/')) {
+      blob = await imageFileToPdfBlob(f)
+    } else if (f.type.startsWith('text/') || /\.(txt|md|html)$/i.test(f.name)) {
+      const text = await f.text()
+      blob = textToPdfBlob(text)
+    } else {
+      try {
+        const text = await f.text()
+        blob = textToPdfBlob(text)
+      } catch (e) {
+        throw new Error('Unsupported file type for conversion')
+      }
+    }
+
+    pdfBlob.value = blob
+    previewUrl.value = URL.createObjectURL(blob)
+    previewType.value = 'pdf'
+    converted.value = true
+    msg.value = '已准备好转换'
+  } catch (e) {
+    msg.value = '转换失败：' + e.message
+  } finally {
+    converting.value = false
+  }
+}
+
+async function uploadAndPrint() {
+  if (!printer.value) { msg.value = '请选择打印机'; return }
+  let fileToSend = null
+  let filename = ''
+  if (pdfBlob.value) {
+    fileToSend = pdfBlob.value
+    filename = downloadName.value || (selectedFile.value && selectedFile.value.name.replace(/\.[^/.]+$/, '') + '.pdf') || 'document.pdf'
+  } else if (selectedFile.value) {
+    fileToSend = selectedFile.value
+    filename = selectedFile.value.name
+  } else {
+    msg.value = '没有可打印的文件'
+    return
+  }
+
+  const form = new FormData()
+  form.append('file', fileToSend, filename)
+  form.append('printer', printer.value)
+  form.append('duplex', isDuplex.value ? 'true' : 'false')
+  form.append('color', isColor.value ? 'true' : 'false')
+
+  try {
+    const resp = await fetch('/api/print', {
+      method: 'POST',
+      body: form,
+      credentials: 'include',
+      headers: { 'X-CSRF-Token': getCSRF() }
+    })
+    if (!resp.ok) {
+      msg.value = await readError(resp)
+      if (resp.status === 401) emit('logout')
+      return
+    }
+    const j = await resp.json()
+    msg.value = '任务已加入队列：' + (j.jobId || '')
+    localStorage.setItem('last_printer', printer.value)
+  } catch (e) {
+    msg.value = e.message
+  }
+}
+
+onMounted(async () => {
+  try {
+    const resp = await fetch('/api/printers', { credentials: 'include' })
+    if (resp.ok) {
+      printers.value = await resp.json()
+      const last = localStorage.getItem('last_printer')
+      if (last) printer.value = last
+      else if (printers.value.length > 0) printer.value = printers.value[0].uri
+    } else if (resp.status === 401) {
+      emit('logout')
+    } else {
+      msg.value = '加载打印机失败'
+    }
+  } catch (e) {
+    msg.value = '加载打印机失败：' + e.message
+  }
+})
 </script>
