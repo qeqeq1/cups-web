@@ -3,7 +3,6 @@ package main
 import (
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"io"
 	"net/http"
 	"os"
@@ -15,22 +14,12 @@ import (
 )
 
 type printResp struct {
-	JobID           string `json:"jobId,omitempty"`
-	OK              bool   `json:"ok"`
-	Pages           int    `json:"pages"`
-	CostCents       int64  `json:"costCents"`
-	BalanceCents    int64  `json:"balanceCents"`
-	MonthSpentCents int64  `json:"monthSpentCents"`
-	YearSpentCents  int64  `json:"yearSpentCents"`
-	IsDuplex        bool   `json:"isDuplex"`
-	IsColor         bool   `json:"isColor"`
+	JobID    string `json:"jobId,omitempty"`
+	OK       bool   `json:"ok"`
+	Pages    int    `json:"pages"`
+	IsDuplex bool   `json:"isDuplex"`
+	IsColor  bool   `json:"isColor"`
 }
-
-var (
-	errInsufficientBalance = errors.New("insufficient balance")
-	errMonthlyLimit        = errors.New("monthly limit exceeded")
-	errYearlyLimit         = errors.New("yearly limit exceeded")
-)
 
 func printHandler(w http.ResponseWriter, r *http.Request) {
 	// Expect multipart form
@@ -161,70 +150,23 @@ func printHandler(w http.ResponseWriter, r *http.Request) {
 
 	sess, _ := auth.GetSession(r)
 	var recordID int64
-	var balanceAfter int64
-	var monthSpent int64
-	var yearSpent int64
-	var costCents int64
 
 	err = appStore.WithTx(r.Context(), false, func(tx *sql.Tx) error {
 		user, err := store.GetUserByID(r.Context(), tx, sess.UserID)
 		if err != nil {
 			return err
 		}
-		if err := normalizeUserPeriods(r.Context(), tx, &user, time.Now()); err != nil {
-			return err
-		}
-		var perPage int64
-		if isColor {
-			var err error
-			perPage, err = store.GetSettingInt(r.Context(), tx, store.SettingColorPageCents, store.DefaultColorPageCents)
-			if err != nil {
-				return err
-			}
-		} else {
-			var err error
-			perPage, err = store.GetSettingInt(r.Context(), tx, store.SettingPerPageCents, store.DefaultPerPageCents)
-			if err != nil {
-				return err
-			}
-		}
-		costCents = int64(pages) * perPage
-		if user.BalanceCents < costCents {
-			return errInsufficientBalance
-		}
-		if user.MonthlyLimitCents > 0 && user.MonthSpentCents+costCents > user.MonthlyLimitCents {
-			return errMonthlyLimit
-		}
-		if user.YearlyLimitCents > 0 && user.YearSpentCents+costCents > user.YearlyLimitCents {
-			return errYearlyLimit
-		}
-
-		before := user.BalanceCents
-		balanceAfter = before - costCents
-		monthSpent = user.MonthSpentCents + costCents
-		yearSpent = user.YearSpentCents + costCents
-		if _, err := tx.ExecContext(r.Context(), `UPDATE users SET
-            balance_cents = ?, month_spent_cents = ?, year_spent_cents = ?, updated_at = ?
-            WHERE id = ?`, balanceAfter, monthSpent, yearSpent, time.Now().UTC().Format(time.RFC3339), user.ID,
-		); err != nil {
-			return err
-		}
 
 		rec := store.PrintRecord{
-			UserID:             user.ID,
-			PrinterURI:         printer,
-			Filename:           fh.Filename,
-			StoredPath:         storedRel,
-			Pages:              pages,
-			CostCents:          costCents,
-			BalanceBeforeCents: before,
-			BalanceAfterCents:  balanceAfter,
-			MonthTotalCents:    monthSpent,
-			YearTotalCents:     yearSpent,
-			Status:             "queued",
-			IsDuplex:           isDuplex,
-			IsColor:            isColor,
-			CreatedAt:          time.Now().UTC().Format(time.RFC3339),
+			UserID:     user.ID,
+			PrinterURI: printer,
+			Filename:   fh.Filename,
+			StoredPath: storedRel,
+			Pages:      pages,
+			Status:     "queued",
+			IsDuplex:   isDuplex,
+			IsColor:    isColor,
+			CreatedAt:  time.Now().UTC().Format(time.RFC3339),
 		}
 		id, err := store.InsertPrintRecord(r.Context(), tx, &rec)
 		if err != nil {
@@ -235,22 +177,12 @@ func printHandler(w http.ResponseWriter, r *http.Request) {
 	})
 	if err != nil {
 		_ = os.Remove(storedAbs)
-		switch {
-		case errors.Is(err, errInsufficientBalance):
-			writeJSONError(w, http.StatusBadRequest, "余额不足以支付本次打印")
-		case errors.Is(err, errMonthlyLimit):
-			writeJSONError(w, http.StatusBadRequest, "超过月度限额")
-		case errors.Is(err, errYearlyLimit):
-			writeJSONError(w, http.StatusBadRequest, "超过年度限额")
-		default:
-			writeJSONError(w, http.StatusInternalServerError, "failed to create print record")
-		}
+		writeJSONError(w, http.StatusInternalServerError, "failed to create print record")
 		return
 	}
 
 	f, err := os.Open(printPath)
 	if err != nil {
-		_ = refundPrint(r.Context(), recordID, sess.UserID, costCents)
 		writeJSONError(w, http.StatusInternalServerError, "failed to open file")
 		return
 	}
@@ -265,7 +197,6 @@ func printHandler(w http.ResponseWriter, r *http.Request) {
 		if n, _ := f.Read(buf); n > 0 {
 			mime = http.DetectContentType(buf[:n])
 			if _, err := f.Seek(0, io.SeekStart); err != nil {
-				_ = refundPrint(r.Context(), recordID, sess.UserID, costCents)
 				writeJSONError(w, http.StatusInternalServerError, "failed to read file")
 				return
 			}
@@ -274,7 +205,6 @@ func printHandler(w http.ResponseWriter, r *http.Request) {
 
 	job, err := ipp.SendPrintJob(printer, f, mime, sess.Username, fh.Filename, isDuplex, isColor)
 	if err != nil {
-		_ = refundPrint(r.Context(), recordID, sess.UserID, costCents)
 		writeJSONError(w, http.StatusInternalServerError, "print error: "+err.Error())
 		return
 	}
@@ -285,14 +215,10 @@ func printHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(printResp{
-		JobID:           job,
-		OK:              true,
-		Pages:           pages,
-		CostCents:       costCents,
-		BalanceCents:    balanceAfter,
-		MonthSpentCents: monthSpent,
-		YearSpentCents:  yearSpent,
-		IsDuplex:        isDuplex,
-		IsColor:         isColor,
+		JobID:    job,
+		OK:       true,
+		Pages:    pages,
+		IsDuplex: isDuplex,
+		IsColor:  isColor,
 	})
 }

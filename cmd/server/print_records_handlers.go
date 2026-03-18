@@ -17,22 +17,17 @@ import (
 )
 
 type printRecordResponse struct {
-	ID                 int64  `json:"id"`
-	UserID             int64  `json:"userId"`
-	Username           string `json:"username"`
-	PrinterURI         string `json:"printerUri"`
-	Filename           string `json:"filename"`
-	Pages              int    `json:"pages"`
-	CostCents          int64  `json:"costCents"`
-	BalanceBeforeCents int64  `json:"balanceBeforeCents"`
-	BalanceAfterCents  int64  `json:"balanceAfterCents"`
-	MonthTotalCents    int64  `json:"monthTotalCents"`
-	YearTotalCents     int64  `json:"yearTotalCents"`
-	JobID              string `json:"jobId"`
-	Status             string `json:"status"`
-	IsDuplex           bool   `json:"isDuplex"`
-	IsColor            bool   `json:"isColor"`
-	CreatedAt          string `json:"createdAt"`
+	ID         int64  `json:"id"`
+	UserID     int64  `json:"userId"`
+	Username   string `json:"username"`
+	PrinterURI string `json:"printerUri"`
+	Filename   string `json:"filename"`
+	Pages      int    `json:"pages"`
+	JobID      string `json:"jobId"`
+	Status     string `json:"status"`
+	IsDuplex   bool   `json:"isDuplex"`
+	IsColor    bool   `json:"isColor"`
+	CreatedAt  string `json:"createdAt"`
 }
 
 func printRecordsHandler(w http.ResponseWriter, r *http.Request) {
@@ -186,22 +181,17 @@ func mapPrintRecords(records []store.PrintRecord) []printRecordResponse {
 			jobID = rec.JobID.String
 		}
 		resp = append(resp, printRecordResponse{
-			ID:                 rec.ID,
-			UserID:             rec.UserID,
-			Username:           rec.Username,
-			PrinterURI:         rec.PrinterURI,
-			Filename:           rec.Filename,
-			Pages:              rec.Pages,
-			CostCents:          rec.CostCents,
-			BalanceBeforeCents: rec.BalanceBeforeCents,
-			BalanceAfterCents:  rec.BalanceAfterCents,
-			MonthTotalCents:    rec.MonthTotalCents,
-			YearTotalCents:     rec.YearTotalCents,
-			JobID:              jobID,
-			Status:             rec.Status,
-			IsDuplex:           rec.IsDuplex,
-			IsColor:            rec.IsColor,
-			CreatedAt:          rec.CreatedAt,
+			ID:         rec.ID,
+			UserID:     rec.UserID,
+			Username:   rec.Username,
+			PrinterURI: rec.PrinterURI,
+			Filename:   rec.Filename,
+			Pages:      rec.Pages,
+			JobID:      jobID,
+			Status:     rec.Status,
+			IsDuplex:   rec.IsDuplex,
+			IsColor:    rec.IsColor,
+			CreatedAt:  rec.CreatedAt,
 		})
 	}
 	return resp

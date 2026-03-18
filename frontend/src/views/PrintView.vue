@@ -6,28 +6,9 @@
 
         <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
           <div class="alert bg-base-200">
-            <div class="space-y-1 text-sm">
-              <div>余额: {{ formatCents(balanceCents) }}</div>
-              <div>黑白单页: {{ formatCents(perPageCents) }}</div>
-              <div>彩色单页: {{ formatCents(colorPageCents) }}</div>
-              <div>本月已用: {{ formatCents(monthSpentCents) }}</div>
-              <div>本年已用: {{ formatCents(yearSpentCents) }}</div>
-            </div>
-          </div>
-          <div class="alert bg-base-200">
-            <div class="space-y-1 text-sm">
-              <div>月度限额: {{ monthlyLimitCents ? formatCents(monthlyLimitCents) : '未设置' }}</div>
-              <div>年度限额: {{ yearlyLimitCents ? formatCents(yearlyLimitCents) : '未设置' }}</div>
-            </div>
-          </div>
-          <div class="alert bg-base-200">
             <div class="text-sm" v-if="estimating">估算中…</div>
             <div class="space-y-1 text-sm" v-else-if="estimate">
-              <div>预估页数: {{ estimate.pages }} <span v-if="estimate.estimated">(估算)</span></div>
-              <div>预估费用: {{ formatCents(estimate.costCents) }}</div>
-              <div v-if="estimate.insufficientBalance" class="text-error">余额不足</div>
-              <div v-if="estimate.wouldExceedMonthly" class="text-warning">超过月度限额</div>
-              <div v-if="estimate.wouldExceedYearly" class="text-warning">超过年度限额</div>
+              <div>预估页数：{{ estimate.pages }} <span v-if="estimate.estimated">(估算)</span></div>
             </div>
             <div class="text-sm" v-else>选择文件后显示估算</div>
           </div>
@@ -117,19 +98,12 @@ export default {
       msg: '',
       selectedFile: null,
       previewUrl: '',
-      previewType: '', // 'pdf' | 'image' | 'text' | ''
+      previewType: '',
       textPreview: '',
       converting: false,
       converted: false,
       pdfBlob: null,
       downloadName: '',
-      balanceCents: 0,
-      perPageCents: 0,
-      colorPageCents: 0,
-      monthSpentCents: 0,
-      yearSpentCents: 0,
-      monthlyLimitCents: 0,
-      yearlyLimitCents: 0,
       estimate: null,
       estimating: false,
       isDuplex: false,
@@ -141,14 +115,9 @@ export default {
       const hasFile = !!this.printer && (!!this.pdfBlob || !!this.selectedFile)
       if (!hasFile) return false
       if (this.estimating) return false
-      if (this.estimate) {
-        if (this.estimate.insufficientBalance) return false
-        if (this.estimate.wouldExceedMonthly || this.estimate.wouldExceedYearly) return false
-      }
       return true
     },
     canConvert() {
-      // disable convert when no file, while converting, or if file is already PDF
       return !!this.selectedFile && !this.converting && this.selectedFile.type !== 'application/pdf'
     }
   },
@@ -162,34 +131,17 @@ export default {
         if (last) this.printer = last
         else if (this.printers.length > 0) this.printer = this.printers[0].uri
       } else if (resp.status === 401) {
-        // session expired / not logged in; notify parent to switch to login view
         this.$emit('logout')
       } else {
         this.msg = '加载打印机失败'
       }
     } catch (e) {
-      this.msg = '加载打印机失败: ' + e.message
+      this.msg = '加载打印机失败：' + e.message
     }
   },
   methods: {
     async loadProfile() {
-      try {
-        const resp = await fetch('/api/me', { credentials: 'include' })
-        if (!resp.ok) {
-          if (resp.status === 401) this.$emit('logout')
-          return
-        }
-        const data = await resp.json()
-        this.balanceCents = data.balanceCents || 0
-        this.perPageCents = data.perPageCents || 0
-        this.colorPageCents = data.colorPageCents || 0
-        this.monthSpentCents = data.monthSpentCents || 0
-        this.yearSpentCents = data.yearSpentCents || 0
-        this.monthlyLimitCents = data.monthlyLimitCents || 0
-        this.yearlyLimitCents = data.yearlyLimitCents || 0
-      } catch (e) {
-        // ignore
-      }
+      // 简化：不再加载费用相关信息
     },
     getCSRF() {
       const m = document.cookie.match('(^|;)\\s*csrf_token\\s*=\\s*([^;]+)')
@@ -213,7 +165,6 @@ export default {
       }
     },
     clearPreview() {
-      // revoke any existing object URL and reset preview-related state
       if (this.previewUrl) {
         try {
           URL.revokeObjectURL(this.previewUrl)
@@ -249,9 +200,8 @@ export default {
         this.pdfBlob = null
         this.converted = false
       } else if (this.isOfficeFile(f)) {
-        // Office files: preview not available in-browser; show a notice
         this.previewType = 'text'
-        this.textPreview = 'Office 文档（无法预览）。点击“转换”生成 PDF。'
+        this.textPreview = 'Office 文档（无法预览）。点击"转换"生成 PDF。'
         this.pdfBlob = null
         this.converted = false
       } else if (f.type.startsWith('text/') || /\.(txt|md|html)$/i.test(f.name)) {
@@ -264,7 +214,6 @@ export default {
         this.pdfBlob = null
         this.converted = false
       } else {
-        // fallback attempt to read as text for preview
         const reader = new FileReader()
         reader.onload = () => {
           const text = typeof reader.result === 'string' ? reader.result : ''
@@ -299,15 +248,8 @@ export default {
         }
         const data = await resp.json()
         this.estimate = data
-        this.perPageCents = data.perPageCents || this.perPageCents
-        this.colorPageCents = data.colorPageCents || this.colorPageCents
-        this.balanceCents = data.balanceCents || this.balanceCents
-        this.monthSpentCents = data.monthSpentCents || this.monthSpentCents
-        this.yearSpentCents = data.yearSpentCents || this.yearSpentCents
-        this.monthlyLimitCents = data.monthlyLimitCents || this.monthlyLimitCents
-        this.yearlyLimitCents = data.yearlyLimitCents || this.yearlyLimitCents
       } catch (e) {
-        this.msg = '估算失败: ' + e.message
+        this.msg = '估算失败：' + e.message
       } finally {
         this.estimating = false
       }
@@ -320,7 +262,6 @@ export default {
         const f = this.selectedFile
         let blob = null
 
-        // Office file types will be converted on the server
         if (this.isOfficeFile(f)) {
           blob = await this.convertOfficeToPdf(f)
         } else if (f.type.startsWith('image/')) {
@@ -329,7 +270,6 @@ export default {
           const text = await f.text()
           blob = this.textToPdfBlob(text)
         } else {
-          // general fallback: attempt to read as text and convert
           try {
             const text = await f.text()
             blob = this.textToPdfBlob(text)
@@ -345,7 +285,7 @@ export default {
         this.msg = '已准备好转换'
         this.estimatePrice()
       } catch (e) {
-        this.msg = '转换失败: ' + e.message
+        this.msg = '转换失败：' + e.message
       } finally {
         this.converting = false
       }
@@ -375,11 +315,6 @@ export default {
           throw new Error('server conversion failed: ' + t)
         }
         const blob = await resp.blob()
-        if (blob.type !== 'application/pdf') {
-          // sometimes servers may not set mime; still accept
-          // but warn in msg
-          this.msg = '已收到已转换文件 (mime: ' + blob.type + ')'
-        }
         return blob
       } catch (e) {
         throw e
@@ -389,14 +324,12 @@ export default {
       return new Promise((resolve, reject) => {
         const img = new Image()
         img.onload = () => {
-          // create canvas sized to image
           const canvas = document.createElement('canvas')
           canvas.width = img.width
           canvas.height = img.height
           const ctx = canvas.getContext('2d')
           ctx.drawImage(img, 0, 0)
           const imgData = canvas.toDataURL('image/jpeg', 1.0)
-          // jsPDF works in "pt" units by default; we'll use px units and convert via options
           const doc = new jsPDF({ unit: 'px', format: [img.width, img.height] })
           doc.addImage(imgData, 'JPEG', 0, 0, img.width, img.height)
           const blob = doc.output('blob')
@@ -420,7 +353,6 @@ export default {
         fileToSend = this.pdfBlob
         filename = this.downloadName || (this.selectedFile && this.selectedFile.name.replace(/\.[^/.]+$/, '') + '.pdf') || 'document.pdf'
       } else if (this.selectedFile) {
-        // if PDF was not created but original file is PDF (maybe set earlier)
         fileToSend = this.selectedFile
         filename = this.selectedFile.name
       } else {
@@ -447,10 +379,7 @@ export default {
           return
         }
         const j = await resp.json()
-        this.msg = '任务已加入队列: ' + (j.jobId || '')
-        this.balanceCents = j.balanceCents || this.balanceCents
-        this.monthSpentCents = j.monthSpentCents || this.monthSpentCents
-        this.yearSpentCents = j.yearSpentCents || this.yearSpentCents
+        this.msg = '任务已加入队列：' + (j.jobId || '')
         this.estimate = null
         localStorage.setItem('last_printer', this.printer)
       } catch (e) {
