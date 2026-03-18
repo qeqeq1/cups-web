@@ -77,7 +77,6 @@
         </div>
       </div>
       <div class="text-sm text-muted mt-2">自动清理会删除打印记录与文件，并压缩数据库。</div>
-      <div class="text-sm text-muted mt-1">SESSION_HASH_KEY / SESSION_BLOCK_KEY 通过环境变量配置，未设置会自动生成（仅建议测试环境）。</div>
     </UCard>
   </div>
 </template>

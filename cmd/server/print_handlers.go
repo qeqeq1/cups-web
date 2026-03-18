@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"strconv"
 	"time"
 
 	"cups-web/internal/auth"
@@ -19,6 +20,7 @@ type printResp struct {
 	Pages    int    `json:"pages"`
 	IsDuplex bool   `json:"isDuplex"`
 	IsColor  bool   `json:"isColor"`
+	Copies   int    `json:"copies"`
 }
 
 func printHandler(w http.ResponseWriter, r *http.Request) {
@@ -42,6 +44,21 @@ func printHandler(w http.ResponseWriter, r *http.Request) {
 
 	isDuplex := r.FormValue("duplex") == "true"
 	isColor := r.FormValue("color") == "true"
+
+	// Extended print options
+	copiesStr := r.FormValue("copies")
+	copies := 1
+	if copiesStr != "" {
+		if n, err := strconv.Atoi(copiesStr); err == nil && n > 0 {
+			copies = n
+		}
+	}
+	orientation := r.FormValue("orientation")
+	paperSize := r.FormValue("paper_size")
+	paperType := r.FormValue("paper_type")
+	printScaling := r.FormValue("print_scaling")
+	pageRange := r.FormValue("page_range")
+	mirror := r.FormValue("mirror") == "true"
 
 	storedRel, storedAbs, err := saveUploadedFile(file, fh.Filename, uploadDir)
 	if err != nil {
@@ -203,7 +220,19 @@ func printHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	job, err := ipp.SendPrintJob(printer, f, mime, sess.Username, fh.Filename, isDuplex, isColor)
+	printOpts := ipp.PrintJobOptions{
+		IsDuplex:     isDuplex,
+		IsColor:      isColor,
+		Copies:       copies,
+		Orientation:  orientation,
+		PaperSize:    paperSize,
+		PaperType:    paperType,
+		PrintScaling: printScaling,
+		PageRange:    pageRange,
+		Mirror:       mirror,
+	}
+
+	job, err := ipp.SendPrintJob(printer, f, mime, sess.Username, fh.Filename, printOpts)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "print error: "+err.Error())
 		return
@@ -220,5 +249,6 @@ func printHandler(w http.ResponseWriter, r *http.Request) {
 		Pages:    pages,
 		IsDuplex: isDuplex,
 		IsColor:  isColor,
+		Copies:   copies,
 	})
 }

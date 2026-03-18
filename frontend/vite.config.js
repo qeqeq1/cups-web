@@ -14,6 +14,21 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('node_modules/vue') || id.includes('node_modules/vue-router')) {
+            return 'vue-vendor'
+          }
+          if (id.includes('node_modules/@nuxt/ui') || id.includes('node_modules/reka-ui') || id.includes('node_modules/@vueuse')) {
+            return 'ui-vendor'
+          }
+          if (id.includes('node_modules/jspdf')) {
+            return 'pdf-vendor'
+          }
+        }
+      }
+    }
   },
   server: {
     port: 5173,
