@@ -25,7 +25,7 @@ jobs:
       - name: Save Docker image as artifact
         run: docker save cups-web:latest -o cups-web.tar
       
-      - uses: actions/upload-artifact@v3
+      - uses: actions/upload-artifact@v4
         with:
           name: cups-web-image
           path: cups-web.tar
