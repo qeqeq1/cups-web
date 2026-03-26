@@ -1,3 +1,7 @@
-.etc
-.data
-.uploads
+.git
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.db
+.venv

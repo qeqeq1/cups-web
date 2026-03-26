@@ -3,13 +3,11 @@ name: Docker Image CI (Native ARM)
 on:
   push:
     branches: [ "master" ]
-    # 建议：如果是发布版本，可以增加 tag 触发
     tags:
       - 'v*'
   pull_request:
     branches: [ "master" ]
 
-# 必须添加权限，否则无法上传到 Release
 permissions:
   contents: write
 
@@ -21,40 +19,72 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # 优化点 1: 实时性能监控脚本
+      - name: Start Runner Resource Monitor
+        run: |
+          echo "Starting resource monitor..."
+          # 编写并运行后台监控脚本
+          while true; do
+            # 获取时间
+            TIME=$(date "+%H:%M:%S")
+            # 获取 CPU 使用率 (使用 top 取反向空闲值)
+            CPU=$(top -bn1 | grep "Cpu(s)" | awk '{print $2 + $4}')
+            # 获取内存使用情况 (已用/总体)
+            MEM=$(free -m | awk '/Mem:/ { printf "%s/%sMB (%.2f%%)", $3, $2, $3*100/$2 }')
+            # 获取网络流量 (以 eth0 为例，计算每秒差值较为复杂，这里显示累计值，或使用 ip -s link)
+            # 简化版：显示累计接收和发送
+            NET=$(cat /proc/net/dev | grep -E "eth0|enp" | head -n 1 | awk '{print "RX: "$2/1024/1024 "MB TX: "$10/1024/1024 "MB"}')
+            
+            echo "[$TIME] CPU: $CPU% | MEM: $MEM | $NET"
+            sleep 1
+          done &
+          # 将进程 ID 保存以便后续停止
+          echo "MONITOR_PID=$!" >> $GITHUB_ENV
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Build ARMv7 image
+      # 优化点 2: 构建并直接压缩
+      - name: Build and Compress ARMv7 image
         run: |
+          echo "Building Docker image..."
+          # --progress=plain 可以让日志不被折叠，更直观
           docker buildx build \
             --platform linux/arm/v7 \
             -t cups-web:armv7 \
             --load \
+            --progress=plain \
             .
+          
+          echo "Compressing image to tar.gz..."
+          # 直接导出并使用 gzip 压缩，减少磁盘占用并加快速度
+          docker save cups-web:armv7 | gzip > cups-web-armv7.tar.gz
+          echo "Compression complete. File size: $(du -h cups-web-armv7.tar.gz | cut -f1)"
 
-      - name: Save Docker image as tar
-        run: |
-          docker save cups-web:armv7 -o cups-web-armv7.tar
-
-      # 第一步：上传到 Artifacts（保留原功能，方便内部测试）
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: cups-web-armv7-image
-          path: cups-web-armv7.tar
+          path: cups-web-armv7.tar.gz
           retention-days: 7
 
-      # 第二步：上传到 GitHub Release
-      - name: Release ARMv7 Tar
+      - name: Release ARMv7 Tar.gz
         uses: softprops/action-gh-release@v2
-        if: github.event_name == 'push' # 仅在 push 时触发，PR 不触发
+        if: github.event_name == 'push'
         with:
-          # 如果是推送 master，标签设为 latest；如果是推送 tag，则使用 tag 名
           tag_name: ${{ github.ref_type == 'tag' && github.ref_name || 'latest' }}
           name: ${{ github.ref_type == 'tag' && github.ref_name || 'Latest Continuous Build' }}
           draft: false
-          prerelease: ${{ github.ref_type != 'tag' }} # 如果不是 tag 推送，标记为预发布
+          prerelease: ${{ github.ref_type != 'tag' }}
           files: |
-            cups-web-armv7.tar
-          # 自动生成 Release Note 摘要
+            cups-web-armv7.tar.gz
           generate_release_notes: true
+
+      # 优化点 3: 停止监控（无论成功失败都执行）
+      - name: Stop Monitor
+        if: always()
+        run: |
+          if [ -n "$MONITOR_PID" ]; then
+            echo "Stopping resource monitor (PID: $MONITOR_PID)..."
+            kill $MONITOR_PID
+          fi
