@@ -1,4 +1,25 @@
-FROM oven/bun AS frontend-build
+# 1. 前端构建阶段：强制使用构建机器的原生架构 (通常是 arm64 或 amd64)
+# 这样 Bun 就能正常运行，因为它不需要在目标架构上编译代码
+FROM --platform=$BUILDPLATFORM oven/bun AS frontend-build
+WORKDIR /src/frontend
+COPY frontend/package*.json ./
+RUN bun install
+COPY frontend/ ./
+RUN bun run build
+
+# 2. 最终运行阶段：这是你需要的 armv7 镜像
+# 注意：这一阶段的镜像（如 alpine, debian, nginx）必须支持 armv7
+FROM --platform=linux/arm/v7 debian:bookworm-slim 
+# 或者使用 nginx:alpine 等支持 armv7 的镜像
+
+WORKDIR /app
+
+# 从前端构建阶段复制编译好的静态文件
+COPY --from=frontend-build /src/frontend/dist ./dist
+
+# ... 其他安装步骤 ...
+# 注意：如果你在这里需要运行 bun，那是不行的，因为 bun 不支持 armv7。
+# 如果你只是运行 python/node/cups 等支持 armv7 的程序，则没问题。
 WORKDIR /src/frontend
 COPY frontend/package*.json ./
 RUN bun install
