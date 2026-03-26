@@ -1,4 +1,4 @@
-name: Docker Image CI
+name: Docker Image CI (Native ARM)
 
 on:
   push:
@@ -8,24 +8,34 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    # 使用 GitHub 托管的原生 ARM64 运行器
+    # 提示：如果此标签报错，说明你的账号/组织可能尚未开启此功能（通常对公共库免费，私有库需付费）
+    runs-on: ubuntu-24.04-arm
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
+      # 即使在 ARM 环境下，使用 buildx 也是管理多平台构建的最佳实践
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
+        uses: docker/setup-buildx-action@v3
 
-      - name: Build and push multi-arch image
+      - name: Build ARMv7 image
         run: |
+          # 即使在 arm64 机器上，我们也明确指定构建 armv7
           docker buildx build \
-            --platform linux/amd64,linux/arm64,linux/arm/v7 \
-            --tag my-dockerhub-username/cups-web:latest \
+            --platform linux/arm/v7 \
+            -t cups-web:armv7 \
             --load \
             .
-      - name: Save Docker image as artifact
-        run: docker save cups-web:latest -o cups-web.tar
-      
-      - uses: actions/upload-artifact@v4
+
+      - name: Save Docker image as tar
+        run: |
+          docker save cups-web:armv7 -o cups-web-armv7.tar
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: cups-web-image
-          path: cups-web.tar
+          name: cups-web-armv7-image
+          path: cups-web-armv7.tar
+          retention-days: 7
