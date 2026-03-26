@@ -26,5 +26,12 @@ jobs:
           docker buildx build \
             --platform linux/amd64,linux/arm64,linux/arm/v7 \
             --tag my-dockerhub-username/cups-web:latest \
-            --push \
+            --load \
             .
+      - name: Save Docker image as artifact
+        run: docker save cups-web:latest -o cups-web.tar
+      
+      - uses: actions/upload-artifact@v3
+        with:
+          name: cups-web-image
+          path: cups-web.tar
